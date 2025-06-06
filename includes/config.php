@@ -16,4 +16,14 @@ if ($conn->connect_error) {
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+
+//for auditing logs
+function logAction($conn, $userId, $action, $details = '') {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN';
+    $stmt = $conn->prepare("INSERT INTO audit_log (user_id, action, details, ip_address) VALUES (?, ?, ?, ?)");
+    $stmt->bind_param("isss", $userId, $action, $details, $ip);
+    $stmt->execute();
+    $stmt->close();
+}
+
 ?>

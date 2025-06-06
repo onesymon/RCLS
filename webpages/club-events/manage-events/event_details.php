@@ -93,14 +93,15 @@ if (!$data) {
         <div class="card h-100 border-info">
           <div class="card-header bg-info text-white d-flex justify-content-between">
             <strong><i class="fas fa-hand-holding-heart mr-1"></i>Contributions</strong>
-            <span class="toggle-link text-light small" onclick="toggleSection('contribList')">Show More</span>
+   
           </div>
-          <div class="card-body p-2 scrollable-section collapsed" id="contribList">
+          <div class="card-body p-2 scrollable-section  " id="contribList">
             <?php
             $stmt = $conn->prepare("SELECT ct.amount, ct.transaction_date, m.fullname 
               FROM club_transactions ct 
               JOIN members m ON ct.member_id = m.id 
-              WHERE ct.activity_id = ? AND ct.category = 'Club Event' AND ct.entry_type = 'Contribution'");
+              WHERE ct.activity_id = ? AND ct.category = 'Club Event' AND ct.entry_type = 'Contribution'   AND ct.entry_type = 'Contribution'
+          AND ct.payment_status = 'Paid'");
             $stmt->bind_param("i", $id);
             $stmt->execute();
             $res = $stmt->get_result();
@@ -125,9 +126,9 @@ if (!$data) {
         <div class="card h-100 border-warning">
           <div class="card-header bg-warning text-dark d-flex justify-content-between">
             <strong><i class="fas fa-donate mr-1"></i>Source of Funds</strong>
-            <span class="toggle-link small" onclick="toggleSection('fundList')">Show More</span>
+       
           </div>
-          <div class="card-body p-2 scrollable-section collapsed" id="fundList">
+          <div class="card-body p-2 scrollable-section  " id="fundList">
             <?php
             $stmt = $conn->prepare("SELECT IFNULL(cw.fund_name, CONCAT('External: ', ct.external_source)) AS source, ct.amount 
               FROM club_transactions ct 
@@ -157,9 +158,9 @@ if (!$data) {
         <div class="card h-100 border-success">
           <div class="card-header bg-success text-white d-flex justify-content-between">
             <strong><i class="fas fa-users mr-1"></i>Event Attendance</strong>
-            <span class="toggle-link text-white small" onclick="toggleSection('attendList')">Show More</span>
+ 
           </div>
-          <div class="card-body p-2 scrollable-section collapsed" id="attendList">
+          <div class="card-body p-2 scrollable-section  " id="attendList">
             <?php
             $stmt = $conn->prepare("SELECT m.fullname, ca.attendance_date, ca.status 
               FROM club_attendances ca 
@@ -239,24 +240,11 @@ if (!$data) {
   overflow-y: auto;
   transition: all 0.3s ease;
 }
-.scrollable-section.collapsed {
-  max-height: 220px;
-  overflow: hidden;
-}
-.toggle-link {
-  cursor: pointer;
-  text-decoration: underline;
-}
+ 
 </style>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-<script>
-function toggleSection(id) {
-  const section = document.getElementById(id);
-  const link = section.previousElementSibling.querySelector(".toggle-link");
-  section.classList.toggle("collapsed");
-  link.textContent = section.classList.contains("collapsed") ? "Show More" : "Show Less";
-}
+<script> 
 
 function downloadPDF() {
   const element = document.getElementById('project-content');

@@ -95,38 +95,71 @@ if ($currencyResult->num_rows > 0) {
     <!-- Contributors, Sources, Attendance, Financials -->
     <div class="row">
 
-      <!-- Contributions -->
-      <div class="col-lg-6 mb-4">
-        <div class="card h-100 border-info">
-          <div class="card-header bg-info text-white">
-            <strong><i class="fas fa-hand-holding-heart mr-1"></i>Contributions</strong>
-          </div>
-          <div class="card-body p-2 scrollable-section">
-            <?php
-            $stmt = $conn->prepare("SELECT ct.amount, ct.transaction_date, m.fullname 
-                                    FROM club_transactions ct 
-                                    JOIN members m ON ct.member_id = m.id 
-                                    WHERE ct.project_id = ? AND ct.entry_type = 'Contribution'
-                                    ORDER BY ct.transaction_date DESC");
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
-            $res = $stmt->get_result();
-            if ($res->num_rows > 0):
-            ?>
-              <ul class="list-group list-group-flush">
-              <?php while ($r = $res->fetch_assoc()): ?>
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <span><?= htmlspecialchars($r['fullname']) ?></span>
-                  <span><?= $currencySymbol . number_format($r['amount'], 2) ?></span>
-                </li>
-              <?php endwhile; ?>
-              </ul>
-            <?php else: ?>
-              <p class="text-muted mb-0">No contributions recorded.</p>
-            <?php endif; ?>
-          </div>
-        </div>
-      </div>
+    <!-- Contributions -->
+<div class="col-lg-6 mb-4">
+  <div class="card h-100 border-info">
+    <div class="card-header bg-info text-white">
+      <strong><i class="fas fa-hand-holding-heart mr-1"></i>Contributions</strong>
+    </div>
+    <div class="card-body p-2 scrollable-section">
+      <?php
+      $stmt = $conn->prepare(" SELECT 
+          ct.amount, 
+          ct.transaction_date, 
+          ct.remarks,
+          m.fullname, 
+          ct.external_source,
+          cw.fund_name
+        FROM club_transactions ct
+        LEFT JOIN members m ON ct.member_id = m.id
+        LEFT JOIN club_wallet_categories cw ON ct.category = 'Club Fund' 
+        WHERE ct.activity_id = ? 
+          AND ct.entry_type = 'Contribution'
+          AND ct.payment_status = 'Paid'
+        ORDER BY ct.transaction_date DESC
+      ");
+      if (!$stmt) {
+          echo "<div class='alert alert-danger'>Prepare failed: " . $conn->error . "</div>";
+      } else {
+          $stmt->bind_param("i", $id);
+          if (!$stmt->execute()) {
+              echo "<div class='alert alert-danger'>Execute failed: " . $stmt->error . "</div>";
+          } else {
+              $res = $stmt->get_result();
+              
+
+              if ($res->num_rows > 0):
+              ?>
+                <ul class="list-group list-group-flush">
+                <?php while ($r = $res->fetch_assoc()): ?>
+                  <?php
+                  $name = $r['fullname'] ?? null;
+                  if (!$name) {
+                      if (!empty($r['external_source'])) {
+                          $name = 'External: ' . $r['external_source'];
+                      } elseif (!empty($r['fund_name'])) {
+                          $name = 'Fund: ' . $r['fund_name'];
+                      } else {
+                          $name = 'Unknown';
+                      }
+                  }
+                  ?>
+                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span><?= htmlspecialchars($name) ?></span>
+                    <span><?= $currencySymbol . number_format($r['amount'], 2) ?></span>
+                  </li>
+                <?php endwhile; ?>
+                </ul>
+              <?php else: ?>
+                <p class="text-muted mb-0">No contributions recorded.</p>
+              <?php endif;
+          }
+      }
+      ?>
+    </div>
+  </div>
+</div>
+
 
       <!-- Source of Funds -->
       <div class="col-lg-6 mb-4">

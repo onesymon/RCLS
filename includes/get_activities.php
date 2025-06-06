@@ -13,11 +13,11 @@ if (!in_array($category, $allowedCategories)) {
 
 switch ($category) {
     case 'Club Project':
-        $sql = "SELECT id, title FROM club_projects WHERE status IN ('Upcoming', 'Ongoing') ORDER BY title ASC";
+        $sql = "SELECT id, title, remaining_funding FROM club_projects WHERE status IN ('Upcoming', 'Ongoing') ORDER BY title ASC";
         break;
 
     case 'Club Event':
-        $sql = "SELECT id, title FROM club_events WHERE status IN ('Upcoming', 'Ongoing') ORDER BY title ASC";
+        $sql = "SELECT id, title, remaining_funding FROM club_events WHERE status IN ('Upcoming', 'Ongoing') ORDER BY title ASC";
         break;
 
     case 'Club Operation':
@@ -34,7 +34,14 @@ if ($stmt = $conn->prepare($sql)) {
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
-        $data[] = ['id' => $row['id'], 'title' => $row['title']];
+        $entry = ['id' => $row['id'], 'title' => $row['title']];
+        
+        // Include remaining_funding if available
+        if (isset($row['remaining_funding'])) {
+            $entry['remaining_funding'] = (float) $row['remaining_funding'];
+        }
+
+        $data[] = $entry;
     }
     $stmt->close();
 }

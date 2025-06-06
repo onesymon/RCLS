@@ -4,33 +4,37 @@ include_once($_SERVER['DOCUMENT_ROOT'] . '/rotary/includes/config.php');
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $email = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
- 
 
     if (isset($_POST['login'])) {
         if (empty($email) || empty($password)) {
             $error_message = "Email and password are required!";
-        }  else {
-                $sqlMember = "SELECT * FROM members WHERE email = '$email'";
-                $resultMember = $conn->query($sqlMember);
+        } else {
+            $sqlMember = "SELECT * FROM members WHERE email = '$email'";
+            $resultMember = $conn->query($sqlMember);
 
-                if ($resultMember && $resultMember->num_rows === 1) {
-                    $row = $resultMember->fetch_assoc();
-                    if (password_verify($password, $row['password'])) {
-                        $_SESSION['user_id'] = $row['id'];
-                        $_SESSION['email'] = $row['email'];
-                        $_SESSION['role'] = $row['role'];
-                        $_SESSION['fullname'] = $row['fullname'];
-                        $_SESSION['photo'] = $row['photo'];
-                        $_SESSION['member_id'] = $row['id'];
-                        header("Location: /rotary/announcements/announcements.php");
-                        exit();
-                    }
+            if ($resultMember && $resultMember->num_rows === 1) {
+                $row = $resultMember->fetch_assoc();
+                if (password_verify($password, $row['password'])) {
+                    $_SESSION['user_id'] = $row['id'];
+                    $_SESSION['email'] = $row['email'];
+                    $_SESSION['role'] = $row['role'];
+                    $_SESSION['fullname'] = $row['fullname'];
+                    $_SESSION['photo'] = $row['photo'];
+                    $_SESSION['member_id'] = $row['id'];
+
+                    // ✅ Log audit only after successful login
+                    logAction($conn, $row['id'], 'Login', 'User successfully logged in');
+
+                    header("Location: /rotary/announcements/announcements.php");
+                    exit();
                 }
-
-                $error_message = "Invalid email or password!";
             }
+
+            $error_message = "Invalid email or password!";
         }
-    } 
+    }
+}
+
 ?>
 
 <!DOCTYPE html>

@@ -23,7 +23,7 @@ if ($_SERVER["REQUEST_METHOD"] === "GET") {
         $fetchStmt->bind_param("i", $delete_id);
         $fetchStmt->execute();
         $fetchStmt->bind_result($category, $activity_id, $amount, $entry_type);
-        
+
         if ($fetchStmt->fetch()) {
             $fetchStmt->close();
 
@@ -33,49 +33,72 @@ if ($_SERVER["REQUEST_METHOD"] === "GET") {
             $deleteStmt->execute();
             $deleteStmt->close();
 
-            // Step 3: If it's a Club Wallet, delete related wallet transaction and update balance
-            if ($category === 'Club Wallet') {
-                // Delete the related club_wallet_transaction
-                $walletDeleteStmt = $conn->prepare("DELETE FROM club_wallet_transactions WHERE transaction_id = ?");
-                $walletDeleteStmt->bind_param("i", $delete_id);
-                $walletDeleteStmt->execute();
-                $walletDeleteStmt->close();
+            // Step 3A: If Club Wallet, remove from wallet_transactions and recalc
+            if ($category === 'Club Wallet' || $category === 'Club Fund') {
+                // Delete wallet transaction
+                $conn->query("DELETE FROM club_wallet_transactions WHERE reference_id = $delete_id");
 
-                // Get fund_id to recalculate balance
-                $fundIdStmt = $conn->prepare("
-                    SELECT fund_id FROM club_wallet_transactions WHERE transaction_id = ?
+                // Recalculate balance
+                $conn->query("
+                    UPDATE club_wallet_categories wc
+                    SET wc.current_balance = (
+                        SELECT COALESCE(SUM(
+                            CASE 
+                                WHEN transaction_type = 'deposit' THEN amount
+                                WHEN transaction_type = 'withdrawal' THEN -amount
+                                ELSE 0
+                            END
+                        ), 0)
+                        FROM club_wallet_transactions
+                        WHERE fund_id = wc.id
+                    )
+                    WHERE wc.id = $activity_id
                 ");
-                $fundIdStmt->bind_param("i", $delete_id);
-                $fundIdStmt->execute();
-                $fundIdStmt->bind_result($fund_id);
-                
-                if ($fundIdStmt->fetch()) {
-                    $fundIdStmt->close();
-
-                    // Recalculate current_balance
-                    $recalcStmt = $conn->prepare("
-                        UPDATE club_wallet_categories
-                        SET current_balance = (
-                            SELECT COALESCE(SUM(
-                                CASE 
-                                    WHEN transaction_type = 'deposit' THEN amount 
-                                    WHEN transaction_type = 'withdrawal' THEN -amount 
-                                    ELSE 0 END
-                            ), 0)
-                            FROM club_wallet_transactions
-                            WHERE fund_id = ?
-                        )
-                        WHERE id = ?
-                    ");
-                    $recalcStmt->bind_param("ii", $fund_id, $fund_id);
-                    $recalcStmt->execute();
-                    $recalcStmt->close();
-                } else {
-                    $fundIdStmt->close(); // still close if nothing found
-                }
             }
 
-            // Final redirect
+            // Step 3B: If Club Project → recalculate current_funding
+            if ($category === 'Club Project') {
+                $recalc = $conn->prepare("
+                    SELECT SUM(amount) as total FROM club_transactions 
+                    WHERE category = 'Club Project' AND activity_id = ? AND payment_status = 'Paid'
+                ");
+                $recalc->bind_param("i", $activity_id);
+                $recalc->execute();
+                $total = $recalc->get_result()->fetch_assoc()['total'] ?? 0;
+                $recalc->close();
+
+                // Get target
+                $target = $conn->query("SELECT target_funding FROM club_projects WHERE id = $activity_id")->fetch_assoc()['target_funding'] ?? 0;
+                $remaining = max(0, $target - $total);
+
+                $update = $conn->prepare("UPDATE club_projects SET current_funding = ?, remaining_funding = ? WHERE id = ?");
+                $update->bind_param("ddi", $total, $remaining, $activity_id);
+                $update->execute();
+                $update->close();
+            }
+
+            // Step 3C: If Club Event → recalculate current_funding
+            if ($category === 'Club Event') {
+                $recalc = $conn->prepare("
+                    SELECT SUM(amount) as total FROM club_transactions 
+                    WHERE category = 'Club Event' AND activity_id = ? AND payment_status = 'Paid'
+                ");
+                $recalc->bind_param("i", $activity_id);
+                $recalc->execute();
+                $total = $recalc->get_result()->fetch_assoc()['total'] ?? 0;
+                $recalc->close();
+
+                // Get target
+                $target = $conn->query("SELECT target_funding FROM club_events WHERE id = $activity_id")->fetch_assoc()['target_funding'] ?? 0;
+                $remaining = max(0, $target - $total);
+
+                $update = $conn->prepare("UPDATE club_events SET current_funding = ?, remaining_funding = ? WHERE id = ?");
+                $update->bind_param("ddi", $total, $remaining, $activity_id);
+                $update->execute();
+                $update->close();
+            }
+
+            // ✅ Done
             header("Location: " . $_SERVER['HTTP_REFERER']);
             exit();
         } else {

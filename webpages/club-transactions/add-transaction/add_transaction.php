@@ -101,16 +101,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $stmt4 = $conn->prepare($balanceSQL);
                 $stmt4->bind_param("di", $amount, $activityId);
                 $stmt4->execute();
-
-<<<<<<< HEAD
-                
-=======
+ 
                 $stmt5 = $conn->prepare("INSERT INTO club_wallet_transactions 
                     (fund_id, transaction_type, amount, remarks, member_id, reference_id, encoded_by) 
                     VALUES (?, ?, ?, ?, ?, ?, ?)");
                 $stmt5->bind_param("ssdssii", $activityId, $transactionType, $amount, $remarks, $memberId, $transactionId, $encodedBy);
                 $stmt5->execute();
->>>>>>> 0be913085bee1194fc22a9f58d90293ee6be9cde
+ 
                 
 // ✅ Now sync the wallet balance
 $updateBalanceQuery = "
@@ -329,7 +326,10 @@ $updateStmt->execute();
                 <!-- STEP 5 -->
                 <div class="step step-5 d-none">
                   <label class="h5 font-weight-bold d-block text-center mb-3">Enter Amount Details</label>
+                  
                   <div class="d-flex justify-content-center flex-column align-items-center">
+                    <div id="remaining-balance-info" class="text-muted text-center mb-3" style="font-weight:bold;"></div>
+
                     <input type="text" class="pos-input mb-2" name="amount" id="amount" placeholder="Amount (₱)" required>
                     <input type="text" class="pos-input mb-2" name="reference_number" placeholder="Reference Number (Optional)">
                     <input type="text" class="pos-input mb-2" name="remarks" placeholder="Additional Notes (Optional)">
@@ -408,6 +408,17 @@ document.addEventListener("DOMContentLoaded", function () {
     if (stepClass === "step-4") populateCategoryOptions();
     if (stepClass === "step-4a") loadActivities(inputs["category"]);
     if (stepClass === "step-6") generateReview();
+ // ✅ Fix: Update balance label only when entering step-5
+  if (stepClass === "step-5") {
+    const info = document.getElementById("remaining-balance-info");
+    if (inputs["source_type"] === 'Member' &&
+        (inputs["category"] === 'Club Project' || inputs["category"] === 'Club Event')) {
+      const maxBal = parseFloat(inputs["max_balance"] || 0);
+      info.textContent = `Remaining Balance for this Activity: ₱${maxBal.toLocaleString()}`;
+    } else {
+      info.textContent = "";
+    }
+  }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -529,7 +540,12 @@ function loadActivities(category) {
   const container = document.getElementById("activity-card-container");
   label.textContent = `Select ${category}`;
   container.innerHTML = `<div class="text-muted">Loading...</div>`;
-
+const info = document.getElementById("remaining-balance-info");
+if (inputs["max_balance"]) {
+  info.textContent = `Remaining Balance for this Activity: ₱${parseFloat(inputs["max_balance"]).toLocaleString()}`;
+} else {
+  info.textContent = "";
+}
   // Special case for Club Fund → load from wallet table
   if (category === "Club Fund") {
     fetch("/rotary/includes/get_wallets.php")
@@ -572,36 +588,49 @@ function loadActivities(category) {
       });
   } else {
     // Default: Load from get_activities.php for Projects, Events, etc.
-    fetch(`/rotary/includes/get_activities.php?category=${encodeURIComponent(category)}`)
-      .then(res => res.json())
-      .then(data => {
-        container.innerHTML = '';
-        data.forEach(item => {
-          const card = document.createElement("div");
-          card.classList.add("tile-card");
-          card.textContent = item.title;
-          card.dataset.value = item.id;
-          card.dataset.name = "activity_id";
-          card.dataset.next = "step-5";
+   fetch(`/rotary/includes/get_activities.php?category=${encodeURIComponent(category)}`)
+  .then(res => res.json())
+  .then(data => {
+    container.innerHTML = '';
+    data.forEach(item => {
+      const card = document.createElement("div");
+      card.classList.add("tile-card");
+      card.textContent = `${item.title} (₱${parseFloat(item.remaining_funding).toLocaleString()})`;
+      card.dataset.value = item.id;
+      card.dataset.name = "activity_id";
+      card.dataset.next = "step-5";
+      card.dataset.remaining = item.remaining_funding;
 
-          card.addEventListener("click", function () {
-            inputs["activity_id"] = item.id;
-            inputs["activity_title"] = item.title;
+      card.addEventListener("click", function () {
+        inputs["activity_id"] = item.id;
+        inputs["activity_title"] = item.title;
+        inputs["max_balance"] = item.remaining_funding;
 
-            let hidden = form.querySelector('[name="activity_id"]');
-            if (!hidden) {
-              hidden = document.createElement("input");
-              hidden.type = "hidden";
-              hidden.name = "activity_id";
-              form.appendChild(hidden);
-            }
-            hidden.value = item.id;
-            showStep("step-5");
-          });
+        // Add hidden inputs
+        let hidden = form.querySelector('[name="activity_id"]');
+        if (!hidden) {
+          hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = "activity_id";
+          form.appendChild(hidden);
+        }
+        hidden.value = item.id;
 
-          container.appendChild(card);
-        });
+        let maxHidden = form.querySelector('[name="max_balance"]');
+        if (!maxHidden) {
+          maxHidden = document.createElement("input");
+          maxHidden.type = "hidden";
+          maxHidden.name = "max_balance";
+          form.appendChild(maxHidden);
+        }
+        maxHidden.value = item.remaining_funding;
+
+        showStep("step-5");
       });
+
+      container.appendChild(card);
+    });
+  });
   }
 }
 
@@ -820,6 +849,18 @@ fetch("/rotary/includes/get_wallets.php")
     confirmBtn.addEventListener("click", function () {
       $('#confirmModal').modal('hide');
       form.dataset.confirmed = true;
+      const amtRaw = amountInput.value.replace(/,/g, '');
+const amtNum = parseFloat(amtRaw);
+const maxBalance = parseFloat(inputs["max_balance"] || 0);
+
+if (inputs["source_type"] === 'Member' &&
+   (inputs["category"] === 'Club Project' || inputs["category"] === 'Club Event')) {
+  if (amtNum > maxBalance) {
+    alert(`⚠ The amount entered (₱${amtNum.toLocaleString()}) exceeds the remaining funding (₱${maxBalance.toLocaleString()}).`);
+    return;
+  }
+}
+
       form.submit();
     });
   }

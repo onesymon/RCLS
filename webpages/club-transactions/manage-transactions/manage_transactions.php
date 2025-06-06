@@ -10,7 +10,6 @@ if (!in_array($_SESSION['role'], ['1', '4', '5', '100'])) {
     header("Location: /rotary/dashboard.php");
     exit();
 }
-
 // Handle update status actions
 if (isset($_GET['id']) && isset($_GET['status'])) {
     $id = intval($_GET['id']);
@@ -23,68 +22,85 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
     $stmt = $conn->prepare("UPDATE club_transactions SET payment_status = ? WHERE id = ?");
     $stmt->bind_param("si", $status, $id);
 
-    if ($stmt->execute()) {if ($stmt->execute()) {
-    if ($status === 'Paid') {
-        $fetchQuery = "SELECT * FROM club_transactions WHERE id = ?";
-        $fetchStmt = $conn->prepare($fetchQuery);
-        $fetchStmt->bind_param("i", $id);
-        $fetchStmt->execute();
-        $result = $fetchStmt->get_result();
+    if ($stmt->execute()) {
+        if ($status === 'Paid') {
+            $fetchQuery = "SELECT * FROM club_transactions WHERE id = ?";
+            $fetchStmt = $conn->prepare($fetchQuery);
+            $fetchStmt->bind_param("i", $id);
+            $fetchStmt->execute();
+            $result = $fetchStmt->get_result();
 
-        if ($result && $result->num_rows > 0) {
-            $tx = $result->fetch_assoc();
+            if ($result && $result->num_rows > 0) {
+                $tx = $result->fetch_assoc();
 
-            if ($tx['category'] === 'Club Fund') {
-                $fundWalletId = intval($tx['activity_id']);
-                $amount = floatval($tx['amount']);
-                $remarks = $tx['remarks'] ?? 'Auto-deducted upon approval';
-                $referenceId = intval($tx['id']);
-                $encodedBy = intval($tx['encoded_by']);
-                $memberId = $tx['member_id'] !== null ? intval($tx['member_id']) : null;
+                // ✅ Update Club Project funding
+                if ($tx['category'] === 'Club Project') {
+                    $projectId = intval($tx['activity_id']);
+                    $amount = floatval($tx['amount']);
 
-                // Prevent duplicate insert
-                $existsCheck = $conn->prepare("SELECT id FROM club_wallet_transactions WHERE reference_id = ?");
-                $existsCheck->bind_param("i", $referenceId);
-                $existsCheck->execute();
-                $existsResult = $existsCheck->get_result();
-$transactionType = strtolower($tx['entry_type']) === 'expense' ? 'withdrawal' : 'deposit';
+                    $updateProject = $conn->prepare("UPDATE club_projects SET current_funding = current_funding + ? WHERE id = ?");
+                    $updateProject->bind_param("di", $amount, $projectId);
+                    $updateProject->execute();
+                    $updateProject->close();
+                }
+                    // ✅ Update Club Event funding
+                    if ($tx['category'] === 'Club Event') {
+                        $eventId = intval($tx['activity_id']);
+                        $amount = floatval($tx['amount']);
 
-                if ($existsResult->num_rows === 0) {
-                 $stmtInsert = $conn->prepare("
-                        INSERT INTO club_wallet_transactions 
-                        (fund_id, transaction_type, amount, remarks, member_id, reference_id, encoded_by) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ");
-
-                    if ($memberId === null) {
-                        $stmtInsert->bind_param("dsdssii", $fundWalletId, $transactionType, $amount, $remarks, $null = NULL, $referenceId, $encodedBy);
-                    } else {
-                        $stmtInsert->bind_param("dsdssii", $fundWalletId, $transactionType, $amount, $remarks, $memberId, $referenceId, $encodedBy);
+                        $updateEvent = $conn->prepare("UPDATE club_events SET current_funding = current_funding + ? WHERE id = ?");
+                        $updateEvent->bind_param("di", $amount, $eventId);
+                        $updateEvent->execute();
+                        $updateEvent->close();
                     }
 
+                // ✅ Existing logic for Club Fund wallet
+                if ($tx['category'] === 'Club Fund') {
+                    $fundWalletId = intval($tx['activity_id']);
+                    $amount = floatval($tx['amount']);
+                    $remarks = $tx['remarks'] ?? 'Auto-deducted upon approval';
+                    $referenceId = intval($tx['id']);
+                    $encodedBy = intval($tx['encoded_by']);
+                    $memberId = $tx['member_id'] !== null ? intval($tx['member_id']) : null;
 
-                    $stmtInsert->execute();
-                    $stmtInsert->close();
+                    $existsCheck = $conn->prepare("SELECT id FROM club_wallet_transactions WHERE reference_id = ?");
+                    $existsCheck->bind_param("i", $referenceId);
+                    $existsCheck->execute();
+                    $existsResult = $existsCheck->get_result();
+                    $transactionType = strtolower($tx['entry_type']) === 'expense' ? 'withdrawal' : 'deposit';
+
+                    if ($existsResult->num_rows === 0) {
+                        $stmtInsert = $conn->prepare("
+                            INSERT INTO club_wallet_transactions 
+                            (fund_id, transaction_type, amount, remarks, member_id, reference_id, encoded_by) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?)");
+
+                        if ($memberId === null) {
+                            $stmtInsert->bind_param("dsdssii", $fundWalletId, $transactionType, $amount, $remarks, $null = NULL, $referenceId, $encodedBy);
+                        } else {
+                            $stmtInsert->bind_param("dsdssii", $fundWalletId, $transactionType, $amount, $remarks, $memberId, $referenceId, $encodedBy);
+                        }
+
+                        $stmtInsert->execute();
+                        $stmtInsert->close();
+                    }
+
+                    $existsCheck->close();
                 }
-
-                $existsCheck->close();
             }
+
+            $fetchStmt->close();
         }
 
-        $fetchStmt->close();
-    }
-
-    header("Location: manage_transactions.php?msg=Status+updated");
-    exit();
-}
- } else {
+        $stmt->close();
+        header("Location: manage_transactions.php?msg=Status+updated");
+        exit();
+    } else {
         echo "Error: " . $stmt->error;
+        $stmt->close();
+        exit();
     }
-
-    $stmt->close();
-    exit();
 }
-
 // Get currency symbol
 $currencySymbol = '₱';
 $currencyQuery = "SELECT currency FROM settings WHERE id = 1";
@@ -125,6 +141,8 @@ if ($filterStatus !== 'All') {
 
 $stmt->execute();
 $result = $stmt->get_result();
+
+
 
 ?>
 
@@ -198,19 +216,30 @@ $result = $stmt->get_result();
                                     switch ($row['category']) {
                                         case 'Club Project':
                                             $res = $conn->query("SELECT title FROM club_projects WHERE id = " . intval($row['activity_id']));
-                                            if ($res && $res->num_rows > 0) $activityTitle = $res->fetch_assoc()['title'];
+                                           if ($res && $res->num_rows > 0) {
+                                                $resRow = $res->fetch_assoc();
+                                                $activityTitle = $resRow['title'] ?? '';
+                                            }
+                                                
                                             break;
                                         case 'Club Event':
                                             $res = $conn->query("SELECT title FROM club_events WHERE id = " . intval($row['activity_id']));
-                                            if ($res && $res->num_rows > 0) $activityTitle = $res->fetch_assoc()['title'];
-                                            break;
+                                           if ($res && $res->num_rows > 0) {
+                                                $resRow = $res->fetch_assoc();
+                                                $activityTitle = $resRow['title'] ?? '';
+                                            }  break;
                                         case 'Club Operation':
                                             $res = $conn->query("SELECT category FROM club_operations WHERE id = " . intval($row['activity_id']));
-                                            if ($res && $res->num_rows > 0) $activityTitle = $res->fetch_assoc()['category'];
-                                            break;
+                                            if ($res && $res->num_rows > 0) {
+                                                $resRow = $res->fetch_assoc();
+                                                $activityTitle = $resRow['category'] ?? '';
+                                            }  break;
                                         case 'Club Fund':
                                             $res = $conn->query("SELECT fund_name FROM club_wallet_categories WHERE id = " . intval($row['activity_id']));
-                                            if ($res && $res->num_rows > 0) $activityTitle = $res->fetch_assoc()['fund_name'];
+                                           if ($res && $res->num_rows > 0) {
+                                                $resRow = $res->fetch_assoc();
+                                                $activityTitle = $resRow['fund_name'] ?? '';
+                                            }
                                             break;
                                     }
 

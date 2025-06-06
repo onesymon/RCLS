@@ -1,10 +1,15 @@
 <?php
 include_once($_SERVER['DOCUMENT_ROOT'] . '/rotary/includes/config.php');
 
+// ✅ Log the logout action BEFORE destroying the session
+if (isset($_SESSION['user_id'])) {
+    logAction($conn, $_SESSION['user_id'], 'Logout', 'User logged out');
+}
+
 // Clear all session variables
 $_SESSION = array();
 
-// If you want to delete the session cookie, also delete it
+// Delete the session cookie
 if (ini_get("session.use_cookies")) {
     $params = session_get_cookie_params();
     setcookie(session_name(), '', time() - 42000, 

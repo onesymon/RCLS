@@ -64,7 +64,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }$wallets_due = [];
 $today = new DateTime();
-$currentYear = (int)$today->format('Y');
+$clubYearStart = (int)$today->format('m') >= 7 ? (int)$today->format('Y') : ((int)$today->format('Y') - 1);
+
 
 // Step 1: Get all required wallets
 $walletsQuery = $conn->query("
@@ -82,8 +83,12 @@ while ($wallet = $walletsQuery->fetch_assoc()) {
 
     // Generate expected due periods for this year
     if ($frequency === 'Monthly') {
-        for ($m = 1; $m <= 12; $m++) {
-            $start = new DateTime("$currentYear-" . str_pad($m, 2, '0', STR_PAD_LEFT) . "-01");
+      for ($i = 0; $i < 12; $i++) {
+    $month = ($i + 7);
+    $year = $month > 12 ? $clubYearStart + 1 : $clubYearStart;
+    $adjustedMonth = $month > 12 ? $month - 12 : $month;
+    $start = new DateTime("$year-" . str_pad($adjustedMonth, 2, '0', STR_PAD_LEFT) . "-01");
+
             $end = clone $start;
             $end->modify('last day of this month');
             $label = $start->format('F Y');
@@ -91,33 +96,43 @@ while ($wallet = $walletsQuery->fetch_assoc()) {
             $periods[] = ['start' => $start, 'end' => $end, 'label' => $label];
         }
     } elseif ($frequency === 'Quarterly') {
-        for ($q = 1; $q <= 4; $q++) {
-            $startMonth = ($q - 1) * 3 + 1;
-            $start = new DateTime("$currentYear-" . str_pad($startMonth, 2, '0', STR_PAD_LEFT) . "-01");
+      for ($q = 1; $q <= 4; $q++) {
+    $startMonth = (($q - 1) * 3 + 7); // starts from July
+    if ($startMonth > 12) {
+        $start = new DateTime(($clubYearStart + 1) . '-' . str_pad($startMonth - 12, 2, '0', STR_PAD_LEFT) . '-01');
+    } else {
+        $start = new DateTime($clubYearStart . '-' . str_pad($startMonth, 2, '0', STR_PAD_LEFT) . '-01');
+    }
+
             $end = clone $start;
             $end->modify('+2 months')->modify('last day of this month');
-            $label = "Q$q $currentYear";
+            $label = "Q$q $clubYearStart";
 
             $periods[] = ['start' => $start, 'end' => $end, 'label' => $label];
         }
     } else { // Annually
-        $start = new DateTime("$currentYear-01-01");
-        $end = new DateTime("$currentYear-12-31");
-        $label = "$currentYear";
+      $start = new DateTime("$clubYearStart-07-01");
+$end = new DateTime(($clubYearStart + 1) . "-06-30");
+$label = $clubYearStart . "-" . ($clubYearStart + 1);
+
 
         $periods[] = ['start' => $start, 'end' => $end, 'label' => $label];
     }
 
-  $totalPaidQuery = $conn->prepare("
-    SELECT SUM(amount) FROM club_transactions
-    WHERE member_id = ? 
-      AND category IN ('Club Fund', 'Club Wallet')
-      AND activity_id = ?
-      AND entry_type IN ('Income', 'Contribution')
-      AND payment_status = 'Paid'
-      AND YEAR(transaction_date) = ?
+$startOfClubYear = "$clubYearStart-07-01 00:00:00";
+$endOfClubYear = ($clubYearStart + 1) . "-06-30 23:59:59";
+
+$totalPaidQuery = $conn->prepare("
+  SELECT SUM(amount) FROM club_transactions
+  WHERE member_id = ? 
+    AND category IN ('Club Fund', 'Club Wallet')
+    AND activity_id = ?
+    AND entry_type IN ('Income', 'Contribution')
+    AND payment_status = 'Paid'
+    AND transaction_date BETWEEN ? AND ?
 ");
-$totalPaidQuery->bind_param("iii", $memberId, $wallet_id, $currentYear);
+$totalPaidQuery->bind_param("iiss", $memberId, $wallet_id, $startOfClubYear, $endOfClubYear);
+
 $totalPaidQuery->execute();
 $totalPaidQuery->bind_result($totalPaid);
 $totalPaidQuery->fetch();
@@ -152,8 +167,10 @@ $wallets_due[$fund_name][] = [
 
 
 <?php include('../../../includes/header.php'); ?>
-<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet" />
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+
+
+
 
 <body class="hold-transition sidebar-mini layout-fixed layout-navbar-fixed layout-footer-fixed">
 <div class="wrapper">
@@ -415,7 +432,9 @@ $remaining = $totalPaid ?: 0;
 <?php
 // Recalculate periods
 $today = new DateTime();
-$currentYear = (int)$today->format('Y');
+$clubYearStart = (int)$today->format('m') >= 7 ? (int)$today->format('Y') : ((int)$today->format('Y') - 1);
+
+
 
 // Fetch wallet info again
 $wallet_id = $wallet_ids[$walletName]; // ✅ ensure we have the correct ID
@@ -427,20 +446,25 @@ $walletMeta->bind_result($frequency, $amount);
 $walletMeta->fetch();
 $walletMeta->close();
 
-$periods = [];
+$periods = []; 
 
 if ($frequency === 'Monthly') {
-    for ($m = 1; $m <= 12; $m++) {
-        $label = DateTime::createFromFormat('Y-m', "$currentYear-$m")->format('F Y');
+    for ($i = 0; $i < 12; $i++) {
+        $month = $i + 7;
+        $year = $month > 12 ? $clubYearStart + 1 : $clubYearStart;
+        $adjustedMonth = $month > 12 ? $month - 12 : $month;
+
+        $label = DateTime::createFromFormat('Y-m', "$year-$adjustedMonth")->format('F Y');
         $periods[] = ['label' => $label, 'amount' => $amount];
     }
-} elseif ($frequency === 'Quarterly') {
+}
+ elseif ($frequency === 'Quarterly') {
     for ($q = 1; $q <= 4; $q++) {
-        $label = "Q$q $currentYear";
+        $label = "Q$q $clubYearStart";
         $periods[] = ['label' => $label, 'amount' => $amount];
     }
 } else { // Annual
-    $periods[] = ['label' => "$currentYear", 'amount' => $amount];
+    $periods[] = ['label' => "$clubYearStart", 'amount' => $amount];
 }
 
 // Fetch total paid again
@@ -550,7 +574,8 @@ foreach ($periods as $p) {
         <h3 class="card-title">My Transaction History</h3>
       </div>
       <div class="card-body table-responsive">
-        <table class="table table-bordered table-hover table-striped">
+    <table id="personalTransactionsTable" class="table table-bordered table-hover table-striped">
+
           <thead class="thead-light">
             <tr>
               <th>Date</th>
@@ -690,10 +715,22 @@ foreach ($periods as $p) {
     </div>
   </div>
 </div>
+<!-- ✅ 1. jQuery (Required by Bootstrap and DataTables) -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
-<!-- JavaScript Dependencies -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> <!-- jQuery -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script> <!-- Bootstrap -->
+<!-- ✅ 2. Bootstrap JS (Bundle includes Popper) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- ✅ 3. DataTables CSS (after Bootstrap's CSS) -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css" />
+
+<!-- ✅ 4. DataTables JS (after jQuery and Bootstrap JS) -->
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
+
+<!-- (Optional) ✅ Select2 if used elsewhere -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" />
+
 
 <!-- Custom Scripts -->
 <script>
@@ -781,8 +818,19 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
  
- 
+  $(document).ready(function () {
+    $('#personalTransactionsTable').DataTable({
+      responsive: true,
+      pageLength: 10,
+      lengthMenu: [5, 10, 25, 50, 100],
+      order: [[0, 'desc']], // Order by Date
+      columnDefs: [
+        { orderable: false, targets: -1 } // Disable sorting for "Actions" column
+      ]
+    });
+  });
 </script>
 
+  
 </body>
 </html>
